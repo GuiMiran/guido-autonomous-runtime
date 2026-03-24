@@ -1,0 +1,1 @@
+Follow GUIDO + SPECTRA strictly. Spec is source of truth.
