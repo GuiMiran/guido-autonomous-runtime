@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v3
+      with:
+        dotnet-version: '8.0.x'
+    - name: Restore dependencies
+      run: dotnet restore
+    - name: Build
+      run: dotnet build --no-restore --configuration Release
+    - name: Test
+      run: |
+        dotnet test tests/auth/AuthTests.csproj --no-build --logger "trx;LogFileName=test_results.trx" --results-directory ./TestResults
+        dotnet test tests/e2e/E2ETests.csproj --no-build --logger "trx;LogFileName=e2e_results.trx" --results-directory ./TestResults
+    - name: Allure Report
+      uses: simple-elf/allure-report-action@v1.8
+      with:
+        results_dir: ./TestResults
+        report_dir: ./allure-report
+    - name: Upload Allure Report
+      uses: actions/upload-artifact@v3
+      with:
+        name: allure-report
+        path: ./allure-report
