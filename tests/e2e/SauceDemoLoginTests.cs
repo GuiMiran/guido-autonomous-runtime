@@ -27,7 +27,7 @@ namespace E2ETests
         [TearDown]
         public void TearDown()
         {
-            driver.Quit();
+            driver?.Quit();
         }
     }
 }

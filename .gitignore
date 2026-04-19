@@ -1,0 +1,25 @@
+## .NET
+bin/
+obj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+## NuGet
+**/packages/*
+
+## Test Results
+TestResults/
+
+## Build
+[Dd]ebug/
+[Rr]elease/
+
+## Selenium Manager cache
+**/Chrome/
+**/selenium-manager/
+
+## Temp
+*.tmp
+nunit_random_seed.tmp
