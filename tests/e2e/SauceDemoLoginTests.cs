@@ -11,7 +11,10 @@ namespace E2ETests
         [SetUp]
         public void Setup()
         {
-            driver = new ChromeDriver();
+            var options = new ChromeOptions();
+            options.AddArgument("--headless=new");
+            options.AddArgument("--window-size=1280,800");
+            driver = new ChromeDriver(options);
         }
 
         [Test]
