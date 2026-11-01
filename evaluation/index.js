@@ -43,15 +43,20 @@ function validateRequest(request, approval, payload, now = Date.now()) {
 
 function runClient(args, { timeoutMs = 5000, maxBytes = 65536 } = {}) {
   return new Promise(resolve => {
-    let stdout = '', stderr = '', bytes = 0, reason = null, settled = false;
+    const stdout = [], stderr = [];
+    let bytes = 0, reason = null, settled = false;
     const child = spawn('docker', args, { shell: false, env: { PATH: process.env.PATH || '/usr/bin:/bin' }, stdio: ['ignore', 'pipe', 'pipe'] });
-    const finish = code => { if (settled) return; settled = true; clearTimeout(timer); resolve({ code, stdout, stderr, reason }); };
+    const finish = code => {
+      if (settled) return; settled = true; clearTimeout(timer);
+      // Decode once: pipe chunks can split a multi-byte UTF-8 character.
+      resolve({ code, stdout: Buffer.concat(stdout).toString('utf8'), stderr: Buffer.concat(stderr).toString('utf8'), reason });
+    };
     const stop = why => { reason = reason || why; child.kill('SIGKILL'); };
     const timer = setTimeout(() => stop('TIMEOUT'), timeoutMs);
     for (const [stream, key] of [[child.stdout, 'stdout'], [child.stderr, 'stderr']]) stream.on('data', chunk => {
       bytes += chunk.length;
       if (bytes > maxBytes) { stop('OUTPUT_LIMIT'); return; }
-      if (key === 'stdout') stdout += chunk.toString('utf8'); else stderr += chunk.toString('utf8');
+      (key === 'stdout' ? stdout : stderr).push(chunk);
     });
     child.on('error', () => { reason = 'UNAVAILABLE'; finish(null); });
     child.on('close', finish);

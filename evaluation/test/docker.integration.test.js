@@ -59,6 +59,15 @@ test('candidate error is not infrastructure success', async () => {
   const r = await execute('module.exports = () => {throw Error("synthetic failure")};', null);
   assert.equal(r.status, 'CANDIDATE_ERROR'); assert.equal('output' in r, false);
 });
+test('UTF-8 output split across pipe chunks preserves the actual JSON value', async () => {
+  const source = `module.exports = () => new Promise(() => {
+const bytes=Buffer.from(JSON.stringify({value:'€'}));
+process.stdout.write(bytes.subarray(0,11));
+setTimeout(()=>{process.stdout.write(bytes.subarray(11));process.exit(0)},50);
+});`;
+  const r = await execute(source, null);
+  assert.equal(r.status, 'COMPLETED'); assert.equal(r.output, '€'); assert.equal(r.outputHash, digest('€'));
+});
 test('wall timeout stops and removes a bounded busy-loop candidate', async () => {
   const r = await execute('module.exports = () => {while(true){}};', null, { timeoutMs: 1000, maxOutputBytes: 1024 });
   assert.equal(r.status, 'TIMEOUT');
