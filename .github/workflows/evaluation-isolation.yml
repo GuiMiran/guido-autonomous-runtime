@@ -1,0 +1,41 @@
+name: Isolated evaluation
+
+on:
+  pull_request:
+    paths:
+      - 'evaluation/**'
+      - '.github/workflows/evaluation-isolation.yml'
+  push:
+    branches: [main, feat/isolated-evaluation-runtime]
+    paths:
+      - 'evaluation/**'
+      - '.github/workflows/evaluation-isolation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  synthetic-docker-controls:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+      - name: Unit denial, policy and cleanup controls
+        working-directory: evaluation
+        run: npm test
+      - name: Prepare public image outside the executor
+        shell: bash
+        run: |
+          docker pull node:24-bookworm-slim
+          image=$(docker image inspect node:24-bookworm-slim --format '{{index .RepoDigests 0}}')
+          [[ "$image" =~ ^[a-z0-9][a-z0-9./:_-]*@sha256:[a-f0-9]{64}$ ]]
+          printf 'GUIDO_EVAL_IMAGE=%s\n' "$image" >> "$GITHUB_ENV"
+      - name: Real Docker synthetic isolation and cleanup controls
+        working-directory: evaluation
+        run: npm run test:integration
