@@ -15,8 +15,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Include="LoginTests.cs" />
-    <Compile Include="StepDefinitions\LoginStepDefinitions.cs" />
+    <ProjectReference Include="..\..\src\auth\Auth.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <None Include="Login.feature" />
   </ItemGroup>
 
