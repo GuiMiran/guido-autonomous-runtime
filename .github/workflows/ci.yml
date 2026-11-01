@@ -5,31 +5,49 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      with:
+        persist-credentials: false
     - name: Setup .NET
-      uses: actions/setup-dotnet@v3
+      uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
       with:
         dotnet-version: '8.0.x'
     - name: Restore dependencies
-      run: dotnet restore
+      run: dotnet restore guido-autonomous-runtime.sln
     - name: Build
-      run: dotnet build --no-restore --configuration Release
-    - name: Test
-      run: |
-        dotnet test tests/auth/AuthTests.csproj --no-build --logger "trx;LogFileName=test_results.trx" --results-directory ./TestResults
-        dotnet test tests/e2e/E2ETests.csproj --no-build --logger "trx;LogFileName=e2e_results.trx" --results-directory ./TestResults
-    - name: Allure Report
-      uses: simple-elf/allure-report-action@v1.8
+      id: build
+      run: dotnet build guido-autonomous-runtime.sln --no-restore --configuration Release
+    - name: Auth tests
+      if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+      run: >-
+        dotnet test tests/auth/AuthTests.csproj --no-build --no-restore --configuration Release
+        --logger "trx;LogFileName=auth_results.trx"
+        --results-directory "${{ runner.temp }}/runtime-test-results/auth"
+    - name: E2E tests (headless Chrome)
+      if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+      run: >-
+        dotnet test tests/e2e/E2ETests.csproj --no-build --no-restore --configuration Release
+        --logger "trx;LogFileName=e2e_results.trx"
+        --results-directory "${{ runner.temp }}/runtime-test-results/e2e"
+    - name: Upload native test results (TRX)
+      if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+      uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
       with:
-        results_dir: ./TestResults
-        report_dir: ./allure-report
-    - name: Upload Allure Report
-      uses: actions/upload-artifact@v3
-      with:
-        name: allure-report
-        path: ./allure-report
+        name: runtime-test-results-${{ github.run_id }}-${{ github.run_attempt }}
+        path: ${{ runner.temp }}/runtime-test-results/**/*.trx
+        if-no-files-found: error
+        retention-days: 14
