@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
+const { attachObservationTransport } = require('./observation-transport');
 
 function canonical(value) {
   if (value === null || typeof value === 'string' || typeof value === 'boolean') return JSON.stringify(value);
@@ -20,7 +21,7 @@ const IMAGE = /^[a-z0-9][a-z0-9./:_-]*@sha256:[a-f0-9]{64}$/;
 
 function validateRequest(request, approval, payload, now = Date.now()) {
   if (!exact(request, ['schemaVersion', 'purpose', 'requestId', 'candidateSha256', 'inputSha256', 'image', 'limits']) ||
-      request.schemaVersion !== 1 || request.purpose !== 'isolated-evaluation' ||
+      request.schemaVersion !== 1 || !['isolated-evaluation', 'isolated-observation'].includes(request.purpose) ||
       typeof request.requestId !== 'string' || !/^[A-Za-z0-9_-]{1,80}$/.test(request.requestId) ||
       typeof request.candidateSha256 !== 'string' || !HASH.test(request.candidateSha256) ||
       typeof request.inputSha256 !== 'string' || !HASH.test(request.inputSha256) || typeof request.image !== 'string' || !IMAGE.test(request.image) ||
@@ -65,11 +66,30 @@ function runClient(args, { timeoutMs = 5000, maxBytes = 65536 } = {}) {
 
 function createArgs(request, stage, name) {
   if (/[\n,]/.test(stage)) throw new Error('Unsafe temporary mount path.');
-  return ['create', '--name', name, '--pull=never', '--network=none', '--read-only', '--user=65534:65534',
+  return ['create', ...(request.purpose === 'isolated-observation' ? ['--interactive'] : []),
+    '--name', name, '--pull=never', '--network=none', '--read-only', '--user=65534:65534',
     '--cap-drop=ALL', '--security-opt=no-new-privileges=true', '--ipc=none', '--pids-limit=32',
     '--memory=128m', '--memory-swap=128m', '--cpus=0.5', '--ulimit=nofile=64:64',
     '--tmpfs=/tmp:rw,nosuid,nodev,noexec,size=16m', '--mount', `type=bind,source=${stage},target=/candidate,readonly`,
-    '--workdir=/candidate', '--env=NODE_OPTIONS=', '--entrypoint=/usr/local/bin/node', request.image, '/candidate/entry.cjs'];
+    '--workdir=/candidate', '--env=NODE_OPTIONS=', '--entrypoint=/usr/local/bin/node', request.image,
+    request.purpose === 'isolated-observation' ? '/candidate/candidate.cjs' : '/candidate/entry.cjs'];
+}
+
+async function runObserved(name, receive, limits) {
+  const child = spawn('docker', ['start', '--attach', '--interactive', name], {
+    shell: false, env: { PATH: process.env.PATH || '/usr/bin:/bin' }, stdio: ['pipe', 'pipe', 'pipe'],
+  });
+  let timer;
+  try {
+    return await Promise.race([
+      attachObservationTransport(child, receive, limits),
+      new Promise(resolve => { timer = setTimeout(() => {
+        child.stdin.destroy();
+        child.kill('SIGKILL');
+        resolve({ status: 'TIMEOUT' });
+      }, limits.timeoutMs); }),
+    ]);
+  } finally { clearTimeout(timer); }
 }
 
 const ENTRY = `'use strict';
@@ -90,6 +110,8 @@ async function executeCandidate(request, approval, payload, options = {}, depend
   }
   catch { return { schemaVersion: 1, status: 'DENIED', requestHash: null }; }
   const base = { schemaVersion: 1, requestHash, image: request.image };
+  const observed = request.purpose === 'isolated-observation';
+  if (observed && typeof options.receive !== 'function') return { ...base, status: 'DENIED' };
   if (options.enabled !== true) return { ...base, status: 'UNAVAILABLE' };
   const client = dependencies.client || runClient; // Trusted host seam for unit tests, never candidate-controlled.
   let stage, name, result = { ...base, status: 'INFRA_ERROR' }, cleanupConfirmed = false;
@@ -99,11 +121,23 @@ async function executeCandidate(request, approval, payload, options = {}, depend
     stage = fs.mkdtempSync(path.join(os.tmpdir(), 'guido-candidate-')); fs.chmodSync(stage, 0o755);
     fs.writeFileSync(path.join(stage, 'candidate.cjs'), payload.candidateSource, { mode: 0o444, flag: 'wx' });
     fs.writeFileSync(path.join(stage, 'input.json'), validated.inputText, { mode: 0o444, flag: 'wx' });
-    fs.writeFileSync(path.join(stage, 'entry.cjs'), ENTRY, { mode: 0o444, flag: 'wx' });
+    if (!observed) fs.writeFileSync(path.join(stage, 'entry.cjs'), ENTRY, { mode: 0o444, flag: 'wx' });
     name = `guido-eval-${crypto.randomUUID()}`;
     const created = await client(createArgs(request, stage, name));
     if (created.code !== 0 || created.reason || !/^[a-f0-9]{64}\s*$/.test(created.stdout)) {
       result = { ...base, status: 'INFRA_ERROR' };
+    } else if (observed) {
+      const ran = await (dependencies.runObserved || runObserved)(name, options.receive, request.limits);
+      if (ran.status !== 'COMPLETED') {
+        result = { ...base, status: ['TIMEOUT', 'OUTPUT_LIMIT', 'PROTOCOL_ERROR'].includes(ran.status) ? ran.status : 'INFRA_ERROR' };
+      } else {
+        const inspection = await client(['inspect', '--format', '{{json .State}}', name]);
+        const state = inspection.code === 0 && !inspection.reason ? JSON.parse(inspection.stdout) : null;
+        if (state?.Running === false && state.ExitCode === 0 && state.OOMKilled === false) {
+          const observation = JSON.parse(canonical(ran.observation));
+          result = { ...base, status: 'COMPLETED', observation, observationHash: digest(observation) };
+        }
+      }
     } else {
       const ran = await client(['start', '--attach', name], { timeoutMs: request.limits.timeoutMs, maxBytes: request.limits.maxOutputBytes });
       if (ran.reason) result = { ...base, status: ['TIMEOUT', 'OUTPUT_LIMIT'].includes(ran.reason) ? ran.reason : 'INFRA_ERROR' };

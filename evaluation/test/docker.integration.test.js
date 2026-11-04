@@ -13,20 +13,38 @@ assert.match(image || '', /^[a-z0-9][a-z0-9./:_-]*@sha256:[a-f0-9]{64}$/, 'An ex
 execFileSync('docker', ['version'], { stdio: 'ignore', timeout: 10000 });
 const containers = () => execFileSync('docker', ['ps', '-a', '--format', '{{.Names}}'], { encoding: 'utf8', timeout: 10000 })
   .trim().split('\n').filter(name => name.startsWith('guido-eval-')).sort();
-async function execute(source, input, limits = { timeoutMs: 10000, maxOutputBytes: 8192 }) {
+async function execute(source, input, limits = { timeoutMs: 10000, maxOutputBytes: 8192 }, receive) {
   const before = containers();
   const stages = fs.readdirSync(os.tmpdir()).filter(name => name.startsWith('guido-candidate-')).sort();
-  const request = { schemaVersion: 1, purpose: 'isolated-evaluation', requestId: `ci-${crypto.randomUUID()}`,
+  const request = { schemaVersion: 1, purpose: receive ? 'isolated-observation' : 'isolated-evaluation', requestId: `ci-${crypto.randomUUID()}`,
     candidateSha256: sha256(source), inputSha256: digest(input), image, limits };
   const approval = { schemaVersion: 1, requestHash: digest(request), approvedBy: 'synthetic-ci-fixture',
     expiresAt: new Date(Date.now() + 60000).toISOString() };
-  const receipt = await executeCandidate(request, approval, { candidateSource: source, input }, { enabled: true });
+  const receipt = await executeCandidate(request, approval, { candidateSource: source, input }, { enabled: true, receive });
   assert.deepEqual(containers(), before, 'No execution container survives the receipt.');
   assert.deepEqual(fs.readdirSync(os.tmpdir()).filter(name => name.startsWith('guido-candidate-')).sort(), stages, 'Staging files are removed.');
   assert.equal(receipt.cleanupConfirmed, true);
   assert.equal(receipt.requestHash, digest(request)); assert.equal(receipt.image, image);
   return receipt;
 }
+test('real Docker exchanges observed frames and cleans up on success and invalid protocol', async () => {
+  let count = 0;
+  const receive = bytes => {
+    const msg = JSON.parse(bytes);
+    if (++count === 1 && msg.op === 'read') return { reply: { value: 7 } };
+    assert.deepEqual(msg, { op: 'finish', value: 7 });
+    return { observation: { verified: true } };
+  };
+  const source = `const rl = require('node:readline').createInterface({input:process.stdin});
+  rl.once('line', line => { console.log(JSON.stringify({op:'finish',value:JSON.parse(line).value})); rl.close(); });
+  console.log(JSON.stringify({op:'read'}));`;
+  const valid = await execute(source, {}, undefined, receive);
+  assert.equal(valid.status, 'COMPLETED');
+  assert.equal(valid.observationHash, digest({ verified: true }));
+  const invalid = await execute("console.log('invalid');", {}, undefined, receive);
+  assert.equal(invalid.status, 'PROTOCOL_ERROR');
+  assert.equal(Object.hasOwn(invalid, 'observation'), false);
+});
 test('real Docker executes a synthetic candidate and binds output', async () => {
   const r = await execute('module.exports = x => x.a + x.b;', { a: 19, b: 23 });
   assert.equal(r.status, 'COMPLETED'); assert.equal(r.output, 42); assert.equal(r.outputHash, digest(42));

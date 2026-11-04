@@ -35,6 +35,17 @@ production filesystem, model API or deployment may be modified by this module.
 
 ## Verification and limits of evidence
 
+The opt-in `isolated-observation` purpose binds a distinct request hash.
+The trusted verifier supplies a fresh synchronous frame handler for each run.
+Only the candidate and input are staged. Docker attaches stdin/stdout without
+TTY or network; stdout must contain newline-delimited frames, each at most
+4096 bytes, within the combined stdout/stderr budget. Invalid protocol
+discards observations and triggers cleanup. A clean exit, inspection and
+confirmed cleanup are required to publish the verifier's observation hash.
+This demonstrates behavior through verifier-owned ports, not external
+persistence or a general effect sandbox. No oracle, credentials or
+expected answers enter the candidate environment.
+
 Unit tests inspect staged files, arguments, digest/approval denial paths, timeout,
 output limits and cleanup failures with a trusted fake Docker client. They never
 execute a candidate on the host and do not demonstrate isolation. The separate

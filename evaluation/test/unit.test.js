@@ -21,7 +21,8 @@ function docker(overrides = {}) {
     calls.push({ args, limits });
     if (args[0] === 'create') {
       stage = args[args.indexOf('--mount') + 1].split('source=')[1].split(',target=')[0];
-      assert.deepEqual(fs.readdirSync(stage).sort(), ['candidate.cjs', 'entry.cjs', 'input.json']);
+      assert.deepEqual(fs.readdirSync(stage).sort(), args.includes('--interactive')
+        ? ['candidate.cjs', 'input.json'] : ['candidate.cjs', 'entry.cjs', 'input.json']);
       for (const name of fs.readdirSync(stage)) assert.equal(fs.statSync(path.join(stage, name)).mode & 0o777, 0o444);
     }
     const defaults = { version: { code: 0, stdout: '28.0.0', stderr: '' },
@@ -47,6 +48,23 @@ test('canonical request hashes ignore object key ordering and reject non-JSON va
 });
 test('valid approval binds the exact request and payload', () => {
   const f = fixture(); assert.equal(validateRequest(f.request, f.approval, f.payload).requestHash, digest(f.request));
+});
+test('observed mode requires bound approval and withholds evidence on failed cleanup', async () => {
+  const f = fixture();
+  f.request.purpose = 'isolated-observation';
+  const options = { enabled: true, receive() {} };
+  assert.equal((await executeCandidate(f.request, f.approval, f.payload, options)).status, 'DENIED');
+  f.approval.requestHash = digest(f.request);
+  assert.equal((await executeCandidate(f.request, f.approval, f.payload, { enabled: true })).status, 'DENIED');
+  for (const fail of [false, true]) {
+    const fake = docker(fail ? { rm: { code: 1, stderr: 'failure' } } : {});
+    const r = await executeCandidate(f.request, f.approval, f.payload, options,
+      { client: fake.client, runObserved: async () => ({ status: 'COMPLETED', observation: { verified: true } }) });
+    assert.equal(fake.calls.find(c => c.args[0] === 'create').args.includes('--interactive'), true);
+    assert.equal(r.status, fail ? 'INFRA_ERROR' : 'COMPLETED');
+    assert.equal(r.cleanupConfirmed, !fail);
+    assert.equal(Object.hasOwn(r, 'observation'), !fail);
+  }
 });
 test('denial paths never invoke Docker', async t => {
   const mutations = {
