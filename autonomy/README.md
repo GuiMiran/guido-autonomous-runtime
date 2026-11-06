@@ -37,3 +37,29 @@ The process does not load `.env` automatically. Use a secured service environmen
 
 ## Next phase
 Replace JSONL with PostgreSQL outbox + work queue; add administrator identity, policy-based capability grants, bounded sandbox workers, signed approval records, invariant tests, observability and controlled GitHub PR integration.
+
+
+## Repository-aware SPECTRA research (PR #7)
+The **read-only** catalog is maintained in `src/repository-catalog.js`. It includes the SPECTRA framework and explicitly approved sample projects pinned to exact Git commits. It does not auto-discover new repos or follow repository text as execution instructions.
+
+List approved repositories (owner-only):
+
+```bash
+curl -sS http://127.0.0.1:8787/v1/repositories \
+  -H "Authorization: Bearer $GUIDO_API_TOKEN"
+```
+
+Submit a grounded planning request:
+
+```bash
+curl -sS http://127.0.0.1:8787/v1/tasks \
+  -H "Authorization: Bearer $GUIDO_API_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"goal":"Identify uncovered acceptance criteria and propose verification steps","repository":"GastroFlow"}'
+```
+
+Supported repository IDs: `spectra`, `GastroFlow`, `vialibre-spectra`, `guido-agentic-pipeline`, `guido-autonomous-runtime`.
+
+The runtime reads public GitHub content via the raw GitHub host, from allowlisted paths and revisions. Each retrieval is bounded and results in path/hash evidence. Fetch failures mark the planning task FAILED. No files are executed, modified, pushed or merged. This extension is not enabled on Railway until the PR is approved and merged. CI tests use mocked GitHub reads; live retrieval and response quality still require an independent integration check.
+
+To update the catalog, submit a reviewed PR that pins a new commit and explicit document paths. Do not grant the model permission to choose remote URLs, credentials or repository permissions.
