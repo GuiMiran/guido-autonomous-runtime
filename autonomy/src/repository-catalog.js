@@ -5,13 +5,13 @@ export const REPOSITORIES = Object.freeze({
     repo: 'GuiMiran/spectra',
     revision: '3d7891ccd1b2c89219ad73325b227061c3837967',
     kind: 'framework',
-    files: Object.freeze(['README.md','AGENTS.md'])
+    files: Object.freeze(['AGENTS.md','MANIFESTO.md'])
   }),
   GastroFlow: Object.freeze({
     repo: 'GuiMiran/GastroFlow',
     revision: 'b7614c145280ed1d7279a274cc0f94066eac8e65',
     kind: 'spectra-pilot',
-    files: Object.freeze(['README.md','.spectra/00-vision.md','docs/SPECTRA-DEMO.md'])
+    files: Object.freeze(['.spectra/00-vision.md','docs/SPECTRA-DEMO.md'])
   }),
   'vialibre-spectra': Object.freeze({
     repo: 'GuiMiran/vialibre-spectra',
