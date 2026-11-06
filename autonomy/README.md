@@ -63,3 +63,21 @@ Supported repository IDs: `spectra`, `GastroFlow`, `vialibre-spectra`, `guido-ag
 The runtime reads public GitHub content via the raw GitHub host, from allowlisted paths and revisions. Each retrieval is bounded and results in path/hash evidence. Fetch failures mark the planning task FAILED. No files are executed, modified, pushed or merged. This extension is not enabled on Railway until the PR is approved and merged. CI tests use mocked GitHub reads; live retrieval and response quality still require an independent integration check.
 
 To update the catalog, submit a reviewed PR that pins a new commit and explicit document paths. Do not grant the model permission to choose remote URLs, credentials or repository permissions.
+
+## Ollama native CPU-limited inference and repeat-safe smoke tests
+On constrained private servers, set `GUIDO_MODEL_PROVIDER=ollama`,
+`GUIDO_MODEL_URL=http://guido-model.railway.internal:11434/api/generate`
+and `GUIDO_MODEL=qwen2.5:0.5b`. This uses native Ollama options
+`num_thread=1`, `num_ctx=1536`, `num_predict=128` and explicit response
+timeouts. Do not use the old `/v1/chat/completions` route for this CPU-limited setup.
+
+For a repeat-safe request, add `Idempotency-Key: gastroflow-smoke-v2` to
+`POST /v1/tasks`. Exact repeats return HTTP 200 with the original task ID;
+different request content with that key returns 409. Keys survive server restarts
+through the existing task journal.
+
+Each public source is fetched and hashed in full, but only bounded excerpts
+are sent to the tiny experimental model. Reported outputs are exploratory
+and **not complete requirements coverage**. The full source and its hashes
+remain the authoritative evidence. Treat tiny-model conclusions as proposals,
+not verified SPECTRA compliance.
