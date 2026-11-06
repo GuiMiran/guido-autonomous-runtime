@@ -3,6 +3,7 @@ import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { decide } from './policy.js';
+import { repositoryList, loadRepositoryContext, composeRepositoryGoal, REPOSITORIES } from './repository-catalog.js';
 
 const MAX_BYTES = 8192;
 const MAX_QUEUE = 100;
@@ -55,6 +56,7 @@ export function createApp(config) {
     tasks.set(id, { ...tasks.get(id), ...patch });
     writeLine(statePath, { type: 'update', id, patch });
   };
+  const repositoryLoader = config.repositoryLoader ?? loadRepositoryContext;
   const inference = config.inference ?? (async goal => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 60000);
@@ -91,7 +93,10 @@ export function createApp(config) {
     update(task.id, { status: 'running', updatedAt: new Date().toISOString() });
     audit('task.running', { taskId: task.id });
     try {
-      const plan = await inference(task.goal);
+      const source = task.repository ? await repositoryLoader(task.repository) : null;
+      const prompt = source ? composeRepositoryGoal(task.goal, source) : task.goal;
+      const plan = await inference(prompt);
+      if (source) audit('repository.read', { taskId: task.id, repository: source.repository, revision: source.revision, evidence: source.evidence });
       update(task.id, { status: 'completed', plan, updatedAt: new Date().toISOString() });
       audit('task.completed', { taskId: task.id, planSha256: digest(plan) });
     } catch (error) {
@@ -106,6 +111,9 @@ export function createApp(config) {
     if (!sameToken(provided, token)) {
       audit('auth.denied', { path: pathname });
       return json(res, 401, { error: 'UNAUTHENTICATED' });
+    }
+    if (pathname === '/v1/repositories' && req.method === 'GET') {
+      return json(res, 200, { repositories: repositoryList() });
     }
     if (pathname === '/v1/tasks' && req.method === 'GET') {
       const policy = decide('task.list', { ownerAuthenticated: true });
@@ -125,10 +133,12 @@ export function createApp(config) {
       try { body = await readBody(req); } catch { return json(res, 400, { error: 'INVALID_BODY' }); }
       if (!body || typeof body.goal !== 'string' || !body.goal.trim() || body.goal.length > 4000)
         return json(res, 400, { error: 'INVALID_GOAL' });
+      if (body.repository !== undefined && (typeof body.repository !== 'string' || !Object.hasOwn(REPOSITORIES, body.repository)))
+        return json(res, 400, { error: 'REPOSITORY_NOT_ALLOWLISTED' });
       if ([...tasks.values()].filter(t => ['queued','running'].includes(t.status)).length >= MAX_QUEUE)
         return json(res, 429, { error: 'QUEUE_FULL' });
       const now = new Date().toISOString();
-      const task = { id: randomUUID(), goal: body.goal.trim(), status: 'queued', createdAt: now, updatedAt: now };
+      const task = { id: randomUUID(), goal: body.goal.trim(), ...(body.repository ? { repository: body.repository } : {}), status: 'queued', createdAt: now, updatedAt: now };
       tasks.set(task.id, task);
       writeLine(statePath, { type: 'task', task });
       audit('task.submitted', { taskId: task.id, goalSha256: digest(task.goal) });
