@@ -1,5 +1,9 @@
 # GUIDO Autonomous Control Plane — Stage 1
 
+Read [repository agent instructions](../AGENTS.md) and the
+[GUIDO SDD governance hub](https://github.com/GuiMiran/spectra/tree/main/docs/ecosystem)
+for component ownership, version baselines and cross-repository traceability.
+
 This is a **planning-only**, bounded, local service. It is not a general autonomous agent or hardened Internet API.
 
 ## Requirements
@@ -59,6 +63,23 @@ curl -sS http://127.0.0.1:8787/v1/tasks \
 ```
 
 Supported repository IDs: `spectra`, `GastroFlow`, `vialibre-spectra`, `guido-agentic-pipeline`, `guido-autonomous-runtime`.
+
+### Explicit governance reference
+
+The companion change for [SPECTRA hub PR #31](https://github.com/GuiMiran/spectra/pull/31)
+adds repository ID `guido-governance`. It reads only the short agent entry and
+component manifest at the reviewed hub commit, retaining path/hash evidence.
+Use this ID in a planning task to request ownership and cross-repository routing.
+It is not automatically loaded for every other repository task, does not follow
+manifest URLs, and grants no new tools or write permissions.
+
+```json
+{"goal":"Identify the owning component and evidence needed for a cross-repository change","repository":"guido-governance"}
+```
+
+Merge and review the hub first. Production use requires separately confirmed
+deployment of this Runtime change. Tiny-model excerpts remain partial, not a
+complete evaluation of the manifest or evidence of instruction adherence.
 
 The runtime reads public GitHub content via the raw GitHub host, from allowlisted paths and revisions. Each retrieval is bounded and results in path/hash evidence. Fetch failures mark the planning task FAILED. No files are executed, modified, pushed or merged. This extension is not enabled on Railway until the PR is approved and merged. CI tests use mocked GitHub reads; live retrieval and response quality still require an independent integration check.
 

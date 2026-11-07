@@ -1,6 +1,12 @@
 import { createHash } from 'node:crypto';
 
 export const REPOSITORIES = Object.freeze({
+  'guido-governance': Object.freeze({
+    repo: 'GuiMiran/spectra',
+    revision: 'f5a1342413fd2bed8a5df3ff0044d7c38737b71d',
+    kind: 'governance-reference',
+    files: Object.freeze(['docs/ecosystem/agent-entry.md','docs/ecosystem/components.json'])
+  }),
   spectra: Object.freeze({
     repo: 'GuiMiran/spectra',
     revision: '3d7891ccd1b2c89219ad73325b227061c3837967',

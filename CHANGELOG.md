@@ -1,6 +1,8 @@
 # Changelog
 
 ## [Unreleased]
+- Add root AGENTS navigation to the SPECTRA governance hub and an explicit,
+  commit-pinned guido-governance context entry; no automatic trust or write authority.
 - Estructura inicial del runtime agentic creada
 - Definidos los 6 agentes base: orchestrator, spectra-curator, guido-planner, builder, test-engineer, qa-governor, self-healer
 - Añadido GUIDO Autonomous Agent y GUIDO Pipeline Agent
